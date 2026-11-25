@@ -290,7 +290,7 @@ def read_fields(path):
         for name in dataset.data_vars:
             short = dataset[name].attrs.get("GRIB_shortName")
             if short in {"2t", "2r", "10u", "10v", "tcc", "tp"}:
-                found[short] = dataset[name]
+                found[short] = dataset[name].load()
         dataset.close()
     return found
 
@@ -336,8 +336,10 @@ def main():
         with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as handle:
             handle.write(blob)
             path = handle.name
-        fields = read_fields(path)
-        Path(path).unlink(missing_ok=True)
+        try:
+            fields = read_fields(path)
+        finally:
+            Path(path).unlink(missing_ok=True)
         valid = cycle + timedelta(hours=hour)
         if "2t" not in fields:
             raise RuntimeError(f"hour {hour} has no temperature")
