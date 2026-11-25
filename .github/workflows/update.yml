@@ -1,0 +1,54 @@
+name: Update extended forecast
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install eccodes
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Build extended.json
+        run: python fetch_gfs.py
+
+      - name: Keep the file as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended
+          path: extended.json
+          retention-days: 7
+
+      # Fill these in after the R2 bucket exists. Until R2_BUCKET is set, the
+      # file stays on the workflow artifact and nothing is uploaded.
+      #   secret R2_ACCESS_KEY_ID
+      #   secret R2_SECRET_ACCESS_KEY
+      #   secret R2_ACCOUNT_ID
+      #   variable R2_BUCKET
+      - name: Upload to Cloudflare R2
+        if: vars.R2_BUCKET != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          aws s3 cp extended.json "s3://${R2_BUCKET}/extended.json" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --content-type application/json \
+            --cache-control "public, max-age=3600"
